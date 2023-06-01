@@ -32,3 +32,7 @@ func (b *BasicAuth) Authorize(req *http.Request, method string, path string) {
 	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(a))
 	req.Header.Set("Authorization", auth)
 }
+
+func NewBasicAuth(u, p string) *BasicAuth {
+	return &BasicAuth{user: u, pw: p}
+}

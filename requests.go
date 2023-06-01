@@ -103,7 +103,6 @@ func (c *Client) mkcol(ctx context.Context, path string) (status int, err error)
 	if status == 405 {
 		status = 201
 	}
-
 	return
 }
 
@@ -131,10 +130,9 @@ func (c *Client) propfind(ctx context.Context, path string, self bool, body stri
 	}
 	defer rs.Body.Close()
 
-	if rs.StatusCode != 207 {
+	if rs.StatusCode/100 != 2 {
 		return newPathError("PROPFIND", path, rs.StatusCode)
 	}
-
 	return parseXML(rs.Body, resp, parse)
 }
 
@@ -177,7 +175,6 @@ func (c *Client) copymove(ctx context.Context, method string, oldpath string, ne
 	switch s {
 	case 201, 204:
 		return nil
-
 	case 207:
 		// TODO handle multistat errors, worst case ...
 		log.Printf("TODO handle %s - %s multistatus result %s\n", method, oldpath, String(data))
