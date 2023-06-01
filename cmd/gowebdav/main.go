@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 	"runtime"
 	"strings"
 
-	d "github.com/studio-b12/gowebdav"
+	d "github.com/uole/gowebdav"
 )
 
 func main() {
@@ -124,7 +125,7 @@ func getCmd(method string) func(c *d.Client, p0, p1 string) error {
 }
 
 func cmdLs(c *d.Client, p0, _ string) (err error) {
-	files, err := c.ReadDir(p0)
+	files, err := c.ReadDir(context.Background(), p0)
 	if err == nil {
 		fmt.Println(fmt.Sprintf("ReadDir: '%s' entries: %d ", p0, len(files)))
 		for _, f := range files {
@@ -135,7 +136,7 @@ func cmdLs(c *d.Client, p0, _ string) (err error) {
 }
 
 func cmdStat(c *d.Client, p0, _ string) (err error) {
-	file, err := c.Stat(p0)
+	file, err := c.Stat(context.Background(), p0)
 	if err == nil {
 		fmt.Println(file)
 	}
@@ -143,7 +144,7 @@ func cmdStat(c *d.Client, p0, _ string) (err error) {
 }
 
 func cmdGet(c *d.Client, p0, p1 string) (err error) {
-	bytes, err := c.Read(p0)
+	bytes, err := c.Read(context.Background(), p0)
 	if err == nil {
 		if p1 == "" {
 			p1 = filepath.Join(".", p0)
@@ -157,35 +158,35 @@ func cmdGet(c *d.Client, p0, p1 string) (err error) {
 }
 
 func cmdRm(c *d.Client, p0, _ string) (err error) {
-	if err = c.Remove(p0); err == nil {
+	if err = c.Remove(context.Background(), p0); err == nil {
 		fmt.Println("Remove: " + p0)
 	}
 	return
 }
 
 func cmdMkdir(c *d.Client, p0, _ string) (err error) {
-	if err = c.Mkdir(p0, 0755); err == nil {
+	if err = c.Mkdir(context.Background(), p0, 0755); err == nil {
 		fmt.Println("Mkdir: " + p0)
 	}
 	return
 }
 
 func cmdMkdirAll(c *d.Client, p0, _ string) (err error) {
-	if err = c.MkdirAll(p0, 0755); err == nil {
+	if err = c.MkdirAll(context.Background(), p0, 0755); err == nil {
 		fmt.Println("MkdirAll: " + p0)
 	}
 	return
 }
 
 func cmdMv(c *d.Client, p0, p1 string) (err error) {
-	if err = c.Rename(p0, p1, true); err == nil {
+	if err = c.Rename(context.Background(), p0, p1, true); err == nil {
 		fmt.Println("Rename: " + p0 + " -> " + p1)
 	}
 	return
 }
 
 func cmdCp(c *d.Client, p0, p1 string) (err error) {
-	if err = c.Copy(p0, p1, true); err == nil {
+	if err = c.Copy(context.Background(), p0, p1, true); err == nil {
 		fmt.Println("Copy: " + p0 + " -> " + p1)
 	}
 	return
@@ -196,7 +197,7 @@ func cmdPut(c *d.Client, p0, p1 string) (err error) {
 		p1 = path.Join(".", p0)
 	} else {
 		var fi fs.FileInfo
-		fi, err = c.Stat(p0)
+		fi, err = c.Stat(context.Background(), p0)
 		if err != nil && !d.IsErrNotFound(err) {
 			return
 		}
@@ -211,7 +212,7 @@ func cmdPut(c *d.Client, p0, p1 string) (err error) {
 	}
 	defer stream.Close()
 
-	if err = c.WriteStream(p0, stream, 0644); err == nil {
+	if err = c.WriteStream(context.Background(), p0, stream, 0644); err == nil {
 		fmt.Println("Put: " + p1 + " -> " + p0)
 	}
 	return

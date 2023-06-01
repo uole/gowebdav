@@ -2,6 +2,7 @@ package gowebdav
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -68,6 +69,13 @@ func (c *Client) SetHeader(key, value string) {
 	c.headers.Add(key, value)
 }
 
+// SetAuthenticator set default authenticator
+func (c *Client) SetAuthenticator(auth Authenticator) {
+	c.authMutex.Lock()
+	c.auth = auth
+	c.authMutex.Unlock()
+}
+
 // SetInterceptor lets us set an arbitrary interceptor for a given client
 func (c *Client) SetInterceptor(interceptor func(method string, rq *http.Request)) {
 	c.interceptor = interceptor
@@ -89,8 +97,8 @@ func (c *Client) SetJar(jar http.CookieJar) {
 }
 
 // Connect connects to our dav server
-func (c *Client) Connect() error {
-	rs, err := c.options("/")
+func (c *Client) Connect(ctx context.Context) error {
+	rs, err := c.options(ctx, "/")
 	if err != nil {
 		return err
 	}
@@ -132,7 +140,7 @@ func getProps(r *response, status string) *props {
 }
 
 // ReadDir reads the contents of a remote directory
-func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
+func (c *Client) ReadDir(ctx context.Context, path string) ([]os.FileInfo, error) {
 	path = FixSlashes(path)
 	files := make([]os.FileInfo, 0)
 	skipSelf := true
@@ -176,7 +184,7 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 		return nil
 	}
 
-	err := c.propfind(path, false,
+	err := c.propfind(ctx, path, false,
 		`<d:propfind xmlns:d='DAV:'>
 			<d:prop>
 				<d:displayname/>
@@ -199,7 +207,7 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 }
 
 // Stat returns the file stats for a specified path
-func (c *Client) Stat(path string) (os.FileInfo, error) {
+func (c *Client) Stat(ctx context.Context, path string) (os.FileInfo, error) {
 	var f *File
 	parse := func(resp interface{}) error {
 		r := resp.(*response)
@@ -228,7 +236,7 @@ func (c *Client) Stat(path string) (os.FileInfo, error) {
 		return nil
 	}
 
-	err := c.propfind(path, true,
+	err := c.propfind(ctx, path, true,
 		`<d:propfind xmlns:d='DAV:'>
 			<d:prop>
 				<d:displayname/>
@@ -251,13 +259,13 @@ func (c *Client) Stat(path string) (os.FileInfo, error) {
 }
 
 // Remove removes a remote file
-func (c *Client) Remove(path string) error {
-	return c.RemoveAll(path)
+func (c *Client) Remove(ctx context.Context, path string) error {
+	return c.RemoveAll(ctx, path)
 }
 
 // RemoveAll removes remote files
-func (c *Client) RemoveAll(path string) error {
-	rs, err := c.req("DELETE", path, nil, nil)
+func (c *Client) RemoveAll(ctx context.Context, path string) error {
+	rs, err := c.req(ctx, "DELETE", path, nil, nil)
 	if err != nil {
 		return newPathError("Remove", path, 400)
 	}
@@ -274,9 +282,9 @@ func (c *Client) RemoveAll(path string) error {
 }
 
 // Mkdir makes a directory
-func (c *Client) Mkdir(path string, _ os.FileMode) (err error) {
+func (c *Client) Mkdir(ctx context.Context, path string, _ os.FileMode) (err error) {
 	path = FixSlashes(path)
-	status, err := c.mkcol(path)
+	status, err := c.mkcol(ctx, path)
 	if err != nil {
 		return
 	}
@@ -288,9 +296,9 @@ func (c *Client) Mkdir(path string, _ os.FileMode) (err error) {
 }
 
 // MkdirAll like mkdir -p, but for webdav
-func (c *Client) MkdirAll(path string, _ os.FileMode) (err error) {
+func (c *Client) MkdirAll(ctx context.Context, path string, _ os.FileMode) (err error) {
 	path = FixSlashes(path)
-	status, err := c.mkcol(path)
+	status, err := c.mkcol(ctx, path)
 	if err != nil {
 		return
 	}
@@ -305,7 +313,7 @@ func (c *Client) MkdirAll(path string, _ os.FileMode) (err error) {
 				continue
 			}
 			sub += e + "/"
-			status, err = c.mkcol(sub)
+			status, err = c.mkcol(ctx, sub)
 			if err != nil {
 				return
 			}
@@ -320,21 +328,21 @@ func (c *Client) MkdirAll(path string, _ os.FileMode) (err error) {
 }
 
 // Rename moves a file from A to B
-func (c *Client) Rename(oldpath, newpath string, overwrite bool) error {
-	return c.copymove("MOVE", oldpath, newpath, overwrite)
+func (c *Client) Rename(ctx context.Context, oldpath, newpath string, overwrite bool) error {
+	return c.copymove(ctx, "MOVE", oldpath, newpath, overwrite)
 }
 
 // Copy copies a file from A to B
-func (c *Client) Copy(oldpath, newpath string, overwrite bool) error {
-	return c.copymove("COPY", oldpath, newpath, overwrite)
+func (c *Client) Copy(ctx context.Context, oldpath, newpath string, overwrite bool) error {
+	return c.copymove(ctx, "COPY", oldpath, newpath, overwrite)
 }
 
 // Read reads the contents of a remote file
-func (c *Client) Read(path string) ([]byte, error) {
+func (c *Client) Read(ctx context.Context, path string) ([]byte, error) {
 	var stream io.ReadCloser
 	var err error
 
-	if stream, err = c.ReadStream(path); err != nil {
+	if stream, err = c.ReadStream(ctx, path); err != nil {
 		return nil, err
 	}
 	defer stream.Close()
@@ -348,8 +356,8 @@ func (c *Client) Read(path string) ([]byte, error) {
 }
 
 // ReadStream reads the stream for a given path
-func (c *Client) ReadStream(path string) (io.ReadCloser, error) {
-	rs, err := c.req("GET", path, nil, nil)
+func (c *Client) ReadStream(ctx context.Context, path string) (io.ReadCloser, error) {
+	rs, err := c.req(ctx, "GET", path, nil, nil)
 	if err != nil {
 		return nil, newPathErrorErr("ReadStream", path, err)
 	}
@@ -370,8 +378,8 @@ func (c *Client) ReadStream(path string) (io.ReadCloser, error) {
 // If the server does not support partial content requests and returns full content instead,
 // this function will emulate the behavior by skipping `offset` bytes and limiting the result
 // to `length`.
-func (c *Client) ReadStreamRange(path string, offset, length int64) (io.ReadCloser, error) {
-	rs, err := c.req("GET", path, nil, func(r *http.Request) {
+func (c *Client) ReadStreamRange(ctx context.Context, path string, offset, length int64) (io.ReadCloser, error) {
+	rs, err := c.req(ctx, "GET", path, nil, func(r *http.Request) {
 		if length > 0 {
 			r.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", offset, offset+length-1))
 		} else {
@@ -404,8 +412,8 @@ func (c *Client) ReadStreamRange(path string, offset, length int64) (io.ReadClos
 }
 
 // Write writes data to a given path
-func (c *Client) Write(path string, data []byte, _ os.FileMode) (err error) {
-	s, err := c.put(path, bytes.NewReader(data))
+func (c *Client) Write(ctx context.Context, path string, data []byte, _ os.FileMode) (err error) {
+	s, err := c.put(ctx, path, bytes.NewReader(data))
 	if err != nil {
 		return
 	}
@@ -416,12 +424,12 @@ func (c *Client) Write(path string, data []byte, _ os.FileMode) (err error) {
 		return nil
 
 	case 404, 409:
-		err = c.createParentCollection(path)
+		err = c.createParentCollection(ctx, path)
 		if err != nil {
 			return
 		}
 
-		s, err = c.put(path, bytes.NewReader(data))
+		s, err = c.put(ctx, path, bytes.NewReader(data))
 		if err != nil {
 			return
 		}
@@ -434,14 +442,14 @@ func (c *Client) Write(path string, data []byte, _ os.FileMode) (err error) {
 }
 
 // WriteStream writes a stream
-func (c *Client) WriteStream(path string, stream io.Reader, _ os.FileMode) (err error) {
+func (c *Client) WriteStream(ctx context.Context, path string, stream io.Reader, _ os.FileMode) (err error) {
 
-	err = c.createParentCollection(path)
+	err = c.createParentCollection(ctx, path)
 	if err != nil {
 		return err
 	}
 
-	s, err := c.put(path, stream)
+	s, err := c.put(ctx, path, stream)
 	if err != nil {
 		return err
 	}
